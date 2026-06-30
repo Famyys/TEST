@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dakar · Carte Isométrique</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a1628; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: #fff; }
+  #canvas-container { width: 100vw; height: 100vh; }
+  canvas { display: block; }
+
+  /* HUD */
+  #hud { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+
+  /* Title */
+  #title-bar {
+    position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    padding: 12px 32px; background: rgba(10,22,40,0.85);
+    border-bottom: 2px solid #f5a623; border-radius: 0 0 16px 16px;
+    text-align: center; backdrop-filter: blur(8px); pointer-events: none;
+  }
+  #title-bar h1 { font-size: 20px; letter-spacing: 4px; color: #f5a623; text-transform: uppercase; }
+  #title-bar p { font-size: 11px; color: #aaa; letter-spacing: 2px; }
+
+  /* Controls panel */
+  #controls {
+    position: fixed; bottom: 24px; left: 24px;
+    background: rgba(10,22,40,0.85); border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 12px; padding: 16px 20px; pointer-events: all;
+    backdrop-filter: blur(8px); min-width: 200px;
+  }
+  #controls h3 { font-size: 11px; color: #f5a623; letter-spacing: 2px; margin-bottom: 12px; text-transform: uppercase; }
+  .ctrl-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .key { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px; padding: 2px 8px; font-size: 10px; color: #ddd; min-width: 28px; text-align: center; }
+  .ctrl-label { font-size: 11px; color: #aaa; }
+
+  /* Minimap */
+  #minimap {
+    position: fixed; bottom: 24px; right: 24px;
+    background: rgba(10,22,40,0.85); border: 2px solid rgba(245,166,35,0.4);
+    border-radius: 12px; padding: 12px; pointer-events: none; backdrop-filter: blur(8px);
+  }
+  #minimap canvas { border-radius: 6px; display: block; }
+  #minimap-label { font-size: 10px; color: #f5a623; letter-spacing: 2px; text-align: center; margin-bottom: 8px; text-transform: uppercase; }
+
+  /* Info panel */
+  #info-panel {
+    position: fixed; top: 50%; right: 24px; transform: translateY(-50%);
+    background: rgba(10,22,40,0.92); border: 2px solid #f5a623;
+    border-radius: 16px; padding: 0; width: 280px;
+    backdrop-filter: blur(12px); pointer-events: all;
+    opacity: 0; transition: opacity 0.3s, transform 0.3s;
+    transform: translateY(-50%) translateX(20px);
+    overflow: hidden;
+  }
+  #info-panel.visible { opacity: 1; transform: translateY(-50%) translateX(0); }
+  #info-header {
+    background: linear-gradient(135deg, #f5a623, #e8890a);
+    padding: 16px 20px; position: relative;
+  }
+  #info-icon { font-size: 32px; margin-bottom: 4px; }
+  #info-name { font-size: 15px; font-weight: 700; color: #0a1628; }
+  #info-type { font-size: 10px; color: rgba(10,22,40,0.7); letter-spacing: 2px; text-transform: uppercase; }
+  #info-close {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(10,22,40,0.2); border: none; color: #0a1628;
+    width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+    font-size: 14px; display: flex; align-items: center; justify-content: center;
+    pointer-events: all;
+  }
+  #info-body { padding: 16px 20px; }
+  #info-desc { font-size: 12px; color: #ccc; line-height: 1.7; margin-bottom: 14px; }
+  .info-stat { display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .stat-key { font-size: 10px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+  .stat-val { font-size: 12px; color: #f5a623; font-weight: 600; }
+  #info-tag { display: inline-block; background: rgba(245,166,35,0.15);
+    border: 1px solid rgba(245,166,35,0.3); border-radius: 20px;
+    padding: 4px 12px; font-size: 10px; color: #f5a623; margin-top: 12px; }
+
+  /* Neighborhood labels */
+  #labels { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .district-label {
+    position: absolute; transform: translate(-50%, -50%);
+    font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.35);
+    text-transform: uppercase; font-weight: 600; text-shadow: 0 0 8px rgba(0,0,0,0.8);
+    white-space: nowrap; pointer-events: none;
+  }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed; pointer-events: none;
+    background: rgba(10,22,40,0.9); border: 1px solid rgba(245,166,35,0.5);
+    border-radius: 8px; padding: 8px 14px; font-size: 12px; color: #fff;
+    white-space: nowrap; opacity: 0; transition: opacity 0.15s;
+    backdrop-filter: blur(4px); transform: translate(-50%, -100%); margin-top: -8px;
+    z-index: 20;
+  }
+  #tooltip.visible { opacity: 1; }
+
+  /* Compass */
+  #compass {
+    position: fixed; top: 90px; right: 24px;
+    background: rgba(10,22,40,0.85); border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 50%; width: 60px; height: 60px;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px); pointer-events: all; cursor: pointer;
+  }
+  #compass svg { width: 40px; height: 40px; }
+
+  /* Loading */
+  #loading {
+    position: fixed; inset: 0; background: #0a1628;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  #loading-logo { font-size: 48px; margin-bottom: 16px; }
+  #loading h2 { font-size: 24px; color: #f5a623; letter-spacing: 4px; margin-bottom: 8px; text-transform: uppercase; }
+  #loading p { font-size: 12px; color: #666; letter-spacing: 2px; }
+  #loading-bar { width: 200px; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 20px; overflow: hidden; }
+  #loading-fill { height: 100%; background: #f5a623; width: 0%; transition: width 0.3s; border-radius: 2px; }
+
+  /* Mode buttons */
+  #mode-bar {
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; pointer-events: all;
+  }
+  .mode-btn {
+    background: rgba(10,22,40,0.85); border: 1px solid rgba(245,166,35,0.3);
+    color: #aaa; padding: 6px 16px; border-radius: 20px; cursor: pointer;
+    font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+    backdrop-filter: blur(8px); transition: all 0.2s;
+  }
+  .mode-btn:hover, .mode-btn.active { background: rgba(245,166,35,0.15); border-color: #f5a623; color: #f5a623; }
+
+  /* Tour button */
+  #tour-btn {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, #f5a623, #e8890a);
+    border: none; color: #0a1628; padding: 10px 28px; border-radius: 24px;
+    font-size: 12px; letter-spacing: 2px; font-weight: 700; cursor: pointer;
+    text-transform: uppercase; pointer-events: all; transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 20px rgba(245,166,35,0.3);
+  }
+  #tour-btn:hover { transform: translateX(-50%) scale(1.05); box-shadow: 0 6px 30px rgba(245,166,35,0.5); }
+  #tour-btn:active { transform: translateX(-50%) scale(0.98); }
+
+  /* Day/Night toggle */
+  #daynight {
+    position: fixed; top: 90px; left: 24px;
+    background: rgba(10,22,40,0.85); border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 24px; padding: 6px; display: flex; gap: 4px;
+    backdrop-filter: blur(8px); pointer-events: all;
+  }
+  .dn-btn {
+    border: none; border-radius: 20px; width: 34px; height: 28px;
+    cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center;
+    background: transparent; transition: background 0.2s;
+  }
+  .dn-btn.active { background: rgba(245,166,35,0.2); }
+
+  /* Stat bar top-right area */
+  #stats-bar {
+    position: fixed; top: 90px; right: 94px;
+    background: rgba(10,22,40,0.85); border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 10px; padding: 8px 14px; backdrop-filter: blur(8px);
+    font-size: 10px; color: #888; pointer-events: none;
+  }
+  #stats-bar span { color: #f5a623; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div id="loading-logo">🏙️</div>
+  <h2>Dakar</h2>
+  <p>Chargement de la carte isométrique...</p>
+  <div id="loading-bar"><div id="loading-fill"></div></div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="hud">
+  <div id="title-bar">
+    <h1>Dakar · Sénégal</h1>
+    <p>Carte Isométrique Interactive · Vue Jeu Vidéo</p>
+  </div>
+
+  <div id="mode-bar">
+    <button class="mode-btn active" data-mode="explore">🗺 Explorer</button>
+    <button class="mode-btn" data-mode="districts">🏘 Quartiers</button>
+    <button class="mode-btn" data-mode="landmarks">🏛 Monuments</button>
+  </div>
+
+  <div id="daynight">
+    <button class="dn-btn active" id="btn-day" title="Jour">☀️</button>
+    <button class="dn-btn" id="btn-sunset" title="Coucher de soleil">🌅</button>
+    <button class="dn-btn" id="btn-night" title="Nuit">🌙</button>
+  </div>
+
+  <div id="controls">
+    <h3>Contrôles</h3>
+    <div class="ctrl-row"><span class="key">ZQSD</span><span class="ctrl-label">Déplacer la vue</span></div>
+    <div class="ctrl-row"><span class="key">🖱️</span><span class="ctrl-label">Clic + glisser</span></div>
+    <div class="ctrl-row"><span class="key">Scroll</span><span class="ctrl-label">Zoom</span></div>
+    <div class="ctrl-row"><span class="key">Clic</span><span class="ctrl-label">Infos bâtiment</span></div>
+    <div class="ctrl-row"><span class="key">R</span><span class="ctrl-label">Réinitialiser vue</span></div>
+  </div>
+
+  <div id="minimap">
+    <div id="minimap-label">📍 Dakar</div>
+    <canvas id="mm-canvas" width="140" height="110"></canvas>
+  </div>
+
+  <div id="compass" title="Réinitialiser vue (R)">
+    <svg viewBox="0 0 40 40">
+      <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(245,166,35,0.3)" stroke-width="1"/>
+      <polygon points="20,4 23,20 20,18 17,20" fill="#f5a623"/>
+      <polygon points="20,36 23,20 20,22 17,20" fill="rgba(255,255,255,0.3)"/>
+      <text x="20" y="11" text-anchor="middle" fill="#f5a623" font-size="6" font-weight="bold">N</text>
+      <text x="20" y="34" text-anchor="middle" fill="#888" font-size="6">S</text>
+      <text x="33" y="22" text-anchor="middle" fill="#888" font-size="6">E</text>
+      <text x="7" y="22" text-anchor="middle" fill="#888" font-size="6">O</text>
+    </svg>
+  </div>
+
+  <div id="stats-bar">
+    Population: <span>3.1M</span> · Superficie: <span>82 km²</span> · Fondée: <span>1857</span>
+  </div>
+
+  <button id="tour-btn">▶ Visite Guidée</button>
+</div>
+
+<div id="info-panel">
+  <div id="info-header">
+    <button id="info-close">✕</button>
+    <div id="info-icon">🏛</div>
+    <div id="info-name">Monument</div>
+    <div id="info-type">Type</div>
+  </div>
+  <div id="info-body">
+    <p id="info-desc">Description du lieu.</p>
+    <div id="info-stats"></div>
+    <div id="info-tag">Dakar · Sénégal</div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+<div id="labels"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── SCENE SETUP ────────────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const W = window.innerWidth, H = window.innerHeight;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a1628, 0.006);
+
+// Isometric camera
+const aspect = W / H;
+const camSize = 35;
+const camera = new THREE.OrthographicCamera(
+  -camSize * aspect, camSize * aspect,
+  camSize, -camSize, 0.1, 500
+);
+camera.position.set(80, 80, 80);
+camera.lookAt(0, 0, 0);
+
+// ─── COLORS ─────────────────────────────────────────────────────────────────
+const C = {
+  ocean:      0x1a6b8a,
+  oceanDeep:  0x0d3d52,
+  sand:       0xd4a85a,
+  sandLight:  0xe8c077,
+  ground:     0xc4956a,
+  groundDark: 0xa87c50,
+  road:       0x8b7355,
+  roadMark:   0xd4b896,
+  grass:      0x7eb87e,
+  grassDark:  0x5a9a5a,
+  wall:       0xe8d5b0,
+  wallOrange: 0xe07a3c,
+  wallWhite:  0xf5f0e8,
+  wallCream:  0xf0e8d0,
+  wallPink:   0xf0b89a,
+  roof:       0xc0392b,
+  roofOrange: 0xe8742a,
+  roofTeal:   0x2e8b8b,
+  roofBlue:   0x2c5f8a,
+  roofGrey:   0x6b7c8a,
+  roofGold:   0xd4a820,
+  glass:      0x4a9aba,
+  glassDark:  0x2d6b8a,
+  metal:      0x8a9ba8,
+  concrete:   0x9aabb5,
+  palm:       0x3d7a3d,
+  palmTrunk:  0x8b6a3d,
+  sky:        0x1a4a6e,
+};
+
+// ─── LIGHTING ────────────────────────────────────────────────────────────────
+let sunLight, ambientLight, fillLight, hemiLight;
+
+function setupLighting(mode) {
+  scene.children.filter(c => c.isLight).forEach(l => scene.remove(l));
+
+  if (mode === 'day') {
+    scene.fog.color.setHex(0xc8e8f5);
+    scene.background = new THREE.Color(0x7ec8e8);
+    renderer.toneMappingExposure = 1.1;
+
+    hemiLight = new THREE.HemisphereLight(0x87ceeb, 0xd4a85a, 0.6);
+    scene.add(hemiLight);
+
+    sunLight = new THREE.DirectionalLight(0xfff5e0, 1.4);
+    sunLight.position.set(60, 100, 40);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 400;
+    sunLight.shadow.camera.left = -80;
+    sunLight.shadow.camera.right = 80;
+    sunLight.shadow.camera.top = 80;
+    sunLight.shadow.camera.bottom = -80;
+    scene.add(sunLight);
+
+    ambientLight = new THREE.AmbientLight(0x4488bb, 0.3);
+    scene.add(ambientLight);
+
+  } else if (mode === 'sunset') {
+    scene.fog.color.setHex(0xff6b35);
+    scene.background = new THREE.Color(0xff8c42);
+    renderer.toneMappingExposure = 0.9;
+
+    hemiLight = new THREE.HemisphereLight(0xff6633, 0x663300, 0.5);
+    scene.add(hemiLight);
+
+    sunLight = new THREE.DirectionalLight(0xff9944, 1.2);
+    sunLight.position.set(100, 20, -20);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.left = -80; sunLight.shadow.camera.right = 80;
+    sunLight.shadow.camera.top = 80; sunLight.shadow.camera.bottom = -80;
+    scene.add(sunLight);
+
+    fillLight = new THREE.DirectionalLight(0x884422, 0.4);
+    fillLight.position.set(-40, 30, 40);
+    scene.add(fillLight);
+
+    ambientLight = new THREE.AmbientLight(0x442211, 0.4);
+    scene.add(ambientLight);
+
+  } else { // night
+    scene.fog.color.setHex(0x050a14);
+    scene.background = new THREE.Color(0x070d1a);
+    renderer.toneMappingExposure = 0.7;
+
+    hemiLight = new THREE.HemisphereLight(0x1a3a5c, 0x050a10, 0.3);
+    scene.add(hemiLight);
+
+    sunLight = new THREE.DirectionalLight(0x334466, 0.3);
+    sunLight.position.set(40, 80, 40);
+    scene.add(sunLight);
+
+    ambientLight = new THREE.AmbientLight(0x0a1020, 0.8);
+    scene.add(ambientLight);
+
+    // City glow lights
+    const pointColors = [0xffaa44, 0xff8844, 0x4488ff, 0x44ffaa];
+    [[-20,2,10],[15,2,-15],[0,2,20],[-10,2,-20]].forEach((p,i) => {
+      const pl = new THREE.PointLight(pointColors[i%4], 0.8, 40);
+      pl.position.set(p[0], p[1], p[2]);
+      scene.add(pl);
+    });
+  }
+}
+setupLighting('day');
+
+// ─── GEOMETRY HELPERS ────────────────────────────────────────────────────────
+function mat(color, opacity=1, emissive=0x000000, emissiveInt=0) {
+  return new THREE.MeshLambertMaterial({
+    color, transparent: opacity<1, opacity,
+    emissive, emissiveIntensity: emissiveInt, flatShading: true
+  });
+}
+
+function box(w,h,d,color,x,y,z,rx=0,ry=0) {
+  const g = new THREE.BoxGeometry(w,h,d);
+  const m = new THREE.Mesh(g, mat(color));
+  m.position.set(x,y+h/2,z);
+  m.rotation.y = ry;
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m);
+  return m;
+}
+
+function cylinder(rt,rb,h,segs,color,x,y,z) {
+  const g = new THREE.CylinderGeometry(rt,rb,h,segs);
+  const m = new THREE.Mesh(g, mat(color));
+  m.position.set(x,y+h/2,z);
+  m.castShadow = true;
+  scene.add(m);
+  return m;
+}
+
+function cone(r,h,segs,color,x,y,z) {
+  const g = new THREE.ConeGeometry(r,h,segs);
+  const m = new THREE.Mesh(g, mat(color));
+  m.position.set(x,y+h/2,z);
+  m.castShadow = true;
+  scene.add(m);
+  return m;
+}
+
+function prism(w,h,d,color,x,y,z,ry=0) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-w/2,0); shape.lineTo(w/2,0); shape.lineTo(0,h); shape.closePath();
+  const g = new THREE.ExtrudeGeometry(shape, {depth:d, bevelEnabled:false});
+  const m = new THREE.Mesh(g, mat(color));
+  m.position.set(x,y,z-d/2);
+  m.rotation.y = ry;
+  m.castShadow = true;
+  scene.add(m);
+  return m;
+}
+
+function sphere(r,color,x,y,z) {
+  const g = new THREE.SphereGeometry(r,6,5);
+  const m = new THREE.Mesh(g, mat(color));
+  m.position.set(x,y,z);
+  m.castShadow = true;
+  scene.add(m);
+  return m;
+}
+
+// Group helper
+function grp() { const g = new THREE.Group(); scene.add(g); return g; }
+
+// ─── LANDMARKS DATA ──────────────────────────────────────────────────────────
+const landmarkData = {
+  'place-independance': {
+    name: "Place de l'Indépendance",
+    icon: "🏛️",
+    type: "Place publique",
+    desc: "Cœur historique de Dakar, cette vaste place est le symbole de l'indépendance du Sénégal proclamée le 4 avril 1960. Entourée d'édifices coloniaux français, elle accueille les grandes cérémonies nationales.",
+    stats: [
+      {k:"Superficie", v:"2 hectares"},
+      {k:"Quartier", v:"Le Plateau"},
+      {k:"Inaugurée", v:"1960"},
+    ],
+    tag: "Centre-ville · Plateau"
+  },
+  'tour-bceao': {
+    name: "Tour BCEAO",
+    icon: "🏢",
+    type: "Gratte-ciel · Finance",
+    desc: "Siège de la Banque Centrale des États de l'Afrique de l'Ouest, cette tour est le bâtiment le plus emblématique du skyline dakarois. À 120m, elle domine l'horizon du Plateau depuis 1978.",
+    stats: [
+      {k:"Hauteur", v:"120 mètres"},
+      {k:"Étages", v:"30 niveaux"},
+      {k:"Construit", v:"1978"},
+    ],
+    tag: "Finance · Architecture"
+  },
+  'cathedrale': {
+    name: "Cathédrale du Souvenir Africain",
+    icon: "⛪",
+    type: "Lieu de culte · Patrimoine",
+    desc: "Cathédrale catholique construite entre 1929 et 1936 par les architectes Donat et Alfred Agostini. Son style romano-byzantin est unique en Afrique de l'Ouest, avec ses deux tours carrées caractéristiques.",
+    stats: [
+      {k:"Construit", v:"1929–1936"},
+      {k:"Style", v:"Romano-Byzantin"},
+      {k:"Hauteur", v:"~40 mètres"},
+    ],
+    tag: "Architecture · Colonial"
+  },
+  'palais-president': {
+    name: "Palais Présidentiel",
+    icon: "🏰",
+    type: "Bâtiment officiel · Gouvernement",
+    desc: "Résidence officielle du Président de la République du Sénégal. Construit à l'époque coloniale française, ce palais blanc gardé est le centre du pouvoir exécutif. Son architecture néoclassique en impose face à l'Atlantique.",
+    stats: [
+      {k:"Construit", v:"1902 (colonial)"},
+      {k:"Superficie", v:"Env. 5 hectares"},
+      {k:"Quartier", v:"Le Plateau"},
+    ],
+    tag: "Gouvernement · Histoire"
+  },
+  'assemblee': {
+    name: "Assemblée Nationale",
+    icon: "🏛",
+    type: "Institution · Parlement",
+    desc: "Siège du pouvoir législatif sénégalais, l'Assemblée Nationale héberge les 165 députés élus. Le bâtiment de style classique abrite les débats parlementaires depuis l'indépendance.",
+    stats: [
+      {k:"Députés", v:"165 élus"},
+      {k:"Quartier", v:"Le Plateau"},
+      {k:"Fondée", v:"1960"},
+    ],
+    tag: "Politique · Institution"
+  },
+  'marche-sandaga': {
+    name: "Marché Sandaga",
+    icon: "🛍️",
+    type: "Marché · Commerce",
+    desc: "Marché central de Dakar, Sandaga est le poumon économique informel de la ville. Ce bâtiment moderniste construit en 1935 abrite des centaines de commerçants vendant tissus, artisanat, électronique et nourriture.",
+    stats: [
+      {k:"Construit", v:"1935"},
+      {k:"Vendeurs", v:"+500 stands"},
+      {k:"Quartier", v:"Médina / Plateau"},
+    ],
+    tag: "Commerce · Tradition"
+  },
+  'phare-mamelles': {
+    name: "Phare des Mamelles",
+    icon: "🗼",
+    type: "Phare · Point de repère",
+    desc: "Ce phare construit en 1864 au sommet de la colline des Mamelles est l'un des plus anciens du Sénégal. À 163m d'altitude, il offre une vue panoramique exceptionnelle sur Dakar et l'océan Atlantique.",
+    stats: [
+      {k:"Altitude", v:"163 mètres"},
+      {k:"Construit", v:"1864"},
+      {k:"Portée lumineuse", v:"53 km"},
+    ],
+    tag: "Patrimoine · Panorama"
+  },
+  'monument-renaissance': {
+    name: "Monument de la Renaissance Africaine",
+    icon: "🗽",
+    type: "Monument · Symbole",
+    desc: "Inaugurée en 2010 par le président Abdoulaye Wade, cette statue de bronze de 49 mètres est la plus haute d'Afrique. Elle représente un homme, une femme et un enfant, symboles de l'émergence du continent africain.",
+    stats: [
+      {k:"Hauteur", v:"49 mètres"},
+      {k:"Inauguré", v:"2010"},
+      {k:"Matériau", v:"Bronze"},
+    ],
+    tag: "Art · Symbole national"
+  },
+  'mosque-divinite': {
+    name: "Mosquée de la Divinité",
+    icon: "🕌",
+    type: "Lieu de culte · Mosquée",
+    desc: "Construite en bord de mer à Ouakam, la Mosquée de la Divinité (Masjid Al-Ilahiyat) est un joyau architectural niché dans la falaise. Sa position spectaculaire face à l'Atlantique en fait l'un des sites les plus photographiés de Dakar.",
+    stats: [
+      {k:"Capacité", v:"1 000 fidèles"},
+      {k:"Quartier", v:"Ouakam"},
+      {k:"Style", v:"Arabo-andalou"},
+    ],
+    tag: "Islam · Architecture"
+  },
+  'port-dakar': {
+    name: "Port Autonome de Dakar",
+    icon: "⚓",
+    type: "Port · Transport",
+    desc: "Principal port d'Afrique de l'Ouest, le Port de Dakar est un hub stratégique majeur. Il traite plus de 15 millions de tonnes de marchandises par an et dessert les pays enclavés du Sahel.",
+    stats: [
+      {k:"Trafic annuel", v:"15 Mt"},
+      {k:"Superficie", v:"193 hectares"},
+      {k:"Fondé", v:"1866"},
+    ],
+    tag: "Économie · Transport"
+  },
+  'universite': {
+    name: "Université Cheikh Anta Diop",
+    icon: "🎓",
+    type: "Université · Éducation",
+    desc: "Fondée en 1957, l'UCAD est la plus grande université francophone d'Afrique subsaharienne. Elle porte le nom du grand égyptologue et historien sénégalais Cheikh Anta Diop. Plus de 80 000 étudiants y sont inscrits.",
+    stats: [
+      {k:"Étudiants", v:"80 000+"},
+      {k:"Fondée", v:"1957"},
+      {k:"Quartier", v:"Fann"},
+    ],
+    tag: "Savoir · Afrique"
+  },
+  'hotel-teranga': {
+    name: "Hôtel Teranga",
+    icon: "🏨",
+    type: "Hôtel · Tourisme",
+    desc: "L'un des hôtels les plus emblématiques de Dakar, situé face à la Place de l'Indépendance. \"Teranga\" signifie \"hospitalité\" en wolof, la valeur fondamentale de la culture sénégalaise. Vue panoramique sur l'Atlantique.",
+    stats: [
+      {k:"Étoiles", v:"★★★★"},
+      {k:"Quartier", v:"Le Plateau"},
+      {k:"Vue", v:"Océan Atlantique"},
+    ],
+    tag: "Tourisme · Hospitalité"
+  },
+  'corniche': {
+    name: "La Corniche de Dakar",
+    icon: "🌊",
+    type: "Promenade · Littoral",
+    desc: "La Corniche est la promenade littorale de Dakar, longeant l'Atlantique sur plusieurs kilomètres entre le Plateau et les Almadies. Pêcheurs, sportifs et promeneurs s'y côtoient face aux vagues.",
+    stats: [
+      {k:"Longueur", v:"~8 kilomètres"},
+      {k:"Quartiers", v:"Fann → Almadies"},
+      {k:"Hauteur falaises", v:"20–40m"},
+    ],
+    tag: "Nature · Urbanisme"
+  },
+  'village-peche': {
+    name: "Village de Pêcheurs de Soumbédioune",
+    icon: "🎣",
+    type: "Village · Culture",
+    desc: "Soumbédioune est le principal village de pêcheurs de Dakar, célèbre pour ses pirogues colorées alignées sur la plage. Chaque matin, les Lébous (peuple de la mer) y débarquent leur pêche dans une atmosphère unique.",
+    stats: [
+      {k:"Pirogues", v:"~500 bateaux"},
+      {k:"Ethnie", v:"Lébous"},
+      {k:"Activité", v:"Pêche artisanale"},
+    ],
+    tag: "Culture · Traditions"
+  },
+  'medina': {
+    name: "La Médina",
+    icon: "🏘️",
+    type: "Quartier · Résidentiel",
+    desc: "Quartier populaire créé en 1914 par les autorités coloniales pour y regrouper la population africaine séparée du Plateau européen. La Médina est aujourd'hui un quartier vivant et densément peuplé, cœur de la culture dakaroise.",
+    stats: [
+      {k:"Créé", v:"1914 (colonial)"},
+      {k:"Densité", v:"Très haute"},
+      {k:"Superficie", v:"~2 km²"},
+    ],
+    tag: "Histoire · Culture"
+  },
+  'almadies': {
+    name: "Cap des Biches / Les Almadies",
+    icon: "🌅",
+    type: "Quartier · Balnéaire",
+    desc: "Les Almadies représentent le point le plus à l'ouest du continent africain, marqué par un phare. Ce quartier résidentiel et touristique haut de gamme abrite ambassades, restaurants et plages prisées.",
+    stats: [
+      {k:"Position", v:"Point le + à l'ouest"},
+      {k:"Longitude", v:"17°31' O"},
+      {k:"Ambiance", v:"Résidentiel / Plages"},
+    ],
+    tag: "Géographie · Tourisme"
+  },
+};
+
+// ─── CLICKABLE OBJECTS ───────────────────────────────────────────────────────
+const clickableObjects = [];
+function markClickable(mesh, id) {
+  mesh.userData.landmarkId = id;
+  clickableObjects.push(mesh);
+  return mesh;
+}
+function addClickable(mesh, id) {
+  if (Array.isArray(mesh)) mesh.forEach(m => { if(m&&m.isMesh) { m.userData.landmarkId=id; clickableObjects.push(m); }});
+  else if (mesh && mesh.isMesh) { mesh.userData.landmarkId=id; clickableObjects.push(mesh); }
+  else if (mesh && mesh.isGroup) { mesh.traverse(m => { if(m.isMesh) { m.userData.landmarkId=id; clickableObjects.push(m); }}); }
+}
+
+// ─── TERRAIN ─────────────────────────────────────────────────────────────────
+function buildTerrain() {
+  // Ocean floor
+  const ocean = new THREE.Mesh(
+    new THREE.PlaneGeometry(300,300),
+    mat(C.oceanDeep)
+  );
+  ocean.rotation.x = -Math.PI/2;
+  ocean.position.y = -0.5;
+  ocean.receiveShadow = true;
+  scene.add(ocean);
+
+  // Ocean surface (animated)
+  const oceanSurf = new THREE.Mesh(
+    new THREE.PlaneGeometry(300,300,20,20),
+    new THREE.MeshLambertMaterial({color:C.ocean, transparent:true, opacity:0.85, flatShading:true})
+  );
+  oceanSurf.rotation.x = -Math.PI/2;
+  oceanSurf.position.y = -0.1;
+  oceanSurf.userData.isOcean = true;
+  scene.add(oceanSurf);
+
+  // Presqu'île de Dakar - irregular polygon shape
+  const peninsulaShape = new THREE.Shape();
+  peninsulaShape.moveTo(-55, -50);
+  peninsulaShape.lineTo(-50, -45);
+  peninsulaShape.lineTo(-55, -30);
+  peninsulaShape.lineTo(-60, -10);
+  peninsulaShape.lineTo(-58, 10);
+  peninsulaShape.lineTo(-50, 25);
+  peninsulaShape.lineTo(-35, 35);
+  peninsulaShape.lineTo(-15, 40);
+  peninsulaShape.lineTo(5, 38);
+  peninsulaShape.lineTo(20, 30);
+  peninsulaShape.lineTo(25, 15);
+  peninsulaShape.lineTo(22, 0);
+  peninsulaShape.lineTo(15, -10);
+  peninsulaShape.lineTo(10, -25);
+  peninsulaShape.lineTo(5, -45);
+  peninsulaShape.lineTo(-10, -55);
+  peninsulaShape.lineTo(-30, -58);
+  peninsulaShape.lineTo(-45, -55);
+  peninsulaShape.closePath();
+
+  const extSettings = { depth: 1.5, bevelEnabled: true, bevelSize: 0.5, bevelThickness: 0.3, bevelSegments: 1 };
+  const landGeo = new THREE.ExtrudeGeometry(peninsulaShape, extSettings);
+  const land = new THREE.Mesh(landGeo, mat(C.ground));
+  land.rotation.x = -Math.PI/2;
+  land.position.y = 0;
+  land.receiveShadow = true;
+  scene.add(land);
+
+  // Beach areas
+  function beach(x,z,w,d) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w,0.3,d), mat(C.sand));
+    b.position.set(x,0.2,z);
+    b.receiveShadow = true;
+    scene.add(b);
+  }
+  beach(-45, 20, 12, 8);
+  beach(-52, 0, 8, 15);
+  beach(10, -30, 10, 8);
+  beach(-5, 35, 20, 6);
+
+  // Hills (Mamelles)
+  function hill(x,z,r,h,color) {
+    const geo = new THREE.ConeGeometry(r, h, 7);
+    const m = new THREE.Mesh(geo, mat(color));
+    m.position.set(x, h/2, z);
+    m.castShadow = true;
+    scene.add(m);
+    return m;
+  }
+  hill(-38, -18, 6, 12, 0x8a7050); // Mamelle gauche
+  hill(-30, -14, 5, 10, 0x7a6040); // Mamelle droite
+
+  // Roads - main axes
+  function road(x,z,w,d,angle=0) {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(w,0.05,d), mat(C.road));
+    r.position.set(x,1.6,z);
+    r.rotation.y = angle;
+    r.receiveShadow = true;
+    scene.add(r);
+  }
+
+  // Boulevard principal (Corniche)
+  road(-25, -5, 3, 80, 0);
+  road(-5, 25, 80, 3, 0);
+  road(0, 0, 3, 60, 0);
+  road(0, 0, 60, 3, 0);
+  road(-15, 5, 3, 50, 0);
+  road(10, 5, 3, 45, 0);
+  road(-5, -15, 50, 3, 0);
+  road(-5, -5, 50, 3, 0);
+  road(-5, 15, 45, 3, 0);
+  road(-5, -25, 40, 3, 0);
+
+  // Cross streets
+  for(let i=-3; i<=3; i++) {
+    road(i*7, 5, 3, 60, 0);
+    road(-5, i*8, 50, 3, 0);
+  }
+}
+
+// ─── BUILDINGS - LE PLATEAU ──────────────────────────────────────────────────
+function buildPlateau() {
+  // === TOUR BCEAO ===
+  const bceaoGroup = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(6,1.5,6), mat(C.concrete));
+  base.position.y = 0.75;
+  bceaoGroup.add(base);
+  // Main tower
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(4.5,28,4.5), mat(C.glassDark));
+  tower.position.y = 1.5+14;
+  bceaoGroup.add(tower);
+  // Glass strips
+  for(let i=0; i<14; i++) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(4.6,0.4,4.6), mat(C.glass));
+    strip.position.y = 3+i*2;
+    bceaoGroup.add(strip);
+  }
+  // Top cap
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(3,3,3), mat(C.metal));
+  cap.position.y = 30;
+  bceaoGroup.add(cap);
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,4,6), mat(0xdddddd));
+  antenna.position.y = 33.5;
+  bceaoGroup.add(antenna);
+  bceaoGroup.position.set(8, 1.5, -8);
+  bceaoGroup.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(bceaoGroup);
+  addClickable(bceaoGroup, 'tour-bceao');
+
+  // === PLACE DE L'INDÉPENDANCE ===
+  // Square ground
+  const place = new THREE.Mesh(new THREE.BoxGeometry(18,0.2,14), mat(0xd4c8a8));
+  place.position.set(-2, 1.6, -2);
+  place.receiveShadow = true;
+  scene.add(place);
+  addClickable(place, 'place-independance');
+
+  // Fountain
+  cylinder(2,2,0.4,8, 0xa0b8c0, -2,1.8,-2);
+  cylinder(1.5,1.5,1,8,C.wallWhite,-2,2.2,-2);
+  cylinder(0.5,0.5,1.5,8,C.concrete,-2,3.2,-2);
+
+  // Flag poles
+  [[2,-2,3],[2,-2,-3],[-6,-2,3],[-6,-2,-3]].forEach(([x,_,z]) => {
+    cylinder(0.1,0.1,4,4,0x888888,x,1.7,z);
+  });
+
+  // Palm trees around place
+  function palm(x,z) {
+    cylinder(0.25,0.3,3.5,5,C.palmTrunk,x,1.6,z);
+    sphere(1.5,C.palm,x,5.5,z);
+    sphere(1,C.palm,x+1,4.8,z);
+    sphere(1,C.palm,x-1,4.8,z);
+    sphere(1,C.palm,x,4.8,z+1);
+    sphere(1,C.palm,x,4.8,z-1);
+  }
+  [[-8,-6],[-8,2],[-8,-14],[4,-6],[4,2],[4,-14]].forEach(([x,z]) => palm(x+2,z-2));
+
+  // === HÔTEL TERANGA ===
+  const hotel = box(10,8,12, C.wallCream, -8,1.6,4);
+  box(10,1,12,C.roofTeal,-8,9.6,4);
+  for(let i=0;i<4;i++) for(let j=0;j<5;j++) {
+    box(1.2,1.4,0.1,C.glass,-13+i*3,3+j*1.2,10.1);
+    box(1.2,1.4,0.1,C.glass,-13+i*3,3+j*1.2,-2.1);
+  }
+  addClickable(hotel,'hotel-teranga');
+
+  // === CATHÉDRALE DU SOUVENIR AFRICAIN ===
+  const cath = new THREE.Group();
+  // Nef centrale
+  const nave = new THREE.Mesh(new THREE.BoxGeometry(8,7,14), mat(C.wallCream));
+  nave.position.y = 3.5;
+  cath.add(nave);
+  // Deux tours
+  [-4,4].forEach(x => {
+    const twr = new THREE.Mesh(new THREE.BoxGeometry(3,12,3), mat(C.wallCream));
+    twr.position.set(x,6,5.5);
+    cath.add(twr);
+    const cap2 = new THREE.Mesh(new THREE.ConeGeometry(1.5,4,4), mat(0x8a6a4a));
+    cap2.position.set(x,13,5.5);
+    cath.add(cap2);
+  });
+  // Rosace
+  const rose = new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,0.2,12), mat(0xddcc88));
+  rose.rotation.x = Math.PI/2;
+  rose.position.set(0,5,7.1);
+  cath.add(rose);
+  // Steps
+  const steps = new THREE.Mesh(new THREE.BoxGeometry(10,0.5,2), mat(C.wallWhite));
+  steps.position.set(0,0.25,8);
+  cath.add(steps);
+  // Roof
+  const cathRoof = new THREE.Mesh(new THREE.BoxGeometry(9,1,15), mat(0x8a7060));
+  cathRoof.position.set(0,7.5,0);
+  cath.add(cathRoof);
+  cath.position.set(-18,1.6,4);
+  cath.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(cath);
+  addClickable(cath, 'cathedrale');
+
+  // === PALAIS PRÉSIDENTIEL ===
+  const palais = new THREE.Group();
+  const pmain = new THREE.Mesh(new THREE.BoxGeometry(16,6,12), mat(C.wallWhite));
+  pmain.position.y = 3;
+  palais.add(pmain);
+  // Portico columns
+  for(let i=-3;i<=3;i+=2) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,6,8), mat(0xf5f0e8));
+    col.position.set(i,3,6.5);
+    palais.add(col);
+  }
+  // Roof
+  const proof = new THREE.Mesh(new THREE.BoxGeometry(18,1,14), mat(C.wallWhite));
+  proof.position.y = 6.5;
+  palais.add(proof);
+  // Wings
+  [-9,9].forEach(x => {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(4,4,10), mat(C.wallWhite));
+    wing.position.set(x,2,0);
+    palais.add(wing);
+  });
+  // Dome
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(3,8,6,0,Math.PI*2,0,Math.PI/2), mat(C.roofGold));
+  dome.position.y = 7.5;
+  palais.add(dome);
+  // Flag
+  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,5,4), mat(0xaaaaaa));
+  flagPole.position.set(0,12,0);
+  palais.add(flagPole);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(2.5,1.5,0.05), mat(0x009900));
+  flag.position.set(1.25,14,0);
+  palais.add(flag);
+  // Guards
+  palais.position.set(-18,1.6,-18);
+  palais.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(palais);
+  addClickable(palais, 'palais-president');
+
+  // Garden
+  const garden = new THREE.Mesh(new THREE.BoxGeometry(20,0.1,14), mat(C.grass));
+  garden.position.set(-18,1.65,-25);
+  scene.add(garden);
+  for(let i=0;i<6;i++) palm(-24+i*4,-24);
+
+  // === ASSEMBLÉE NATIONALE ===
+  const asm = new THREE.Group();
+  const aMain = new THREE.Mesh(new THREE.BoxGeometry(12,5,10), mat(C.wallCream));
+  aMain.position.y = 2.5;
+  asm.add(aMain);
+  // Portico
+  const aPorch = new THREE.Mesh(new THREE.BoxGeometry(14,6,3), mat(C.wallWhite));
+  aPorch.position.set(0,3,6.5);
+  asm.add(aPorch);
+  for(let i=-2;i<=2;i++) {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,6,6), mat(0xf0ead8));
+    c.position.set(i*2.5,3,8);
+    asm.add(c);
+  }
+  const aRoof = new THREE.Mesh(new THREE.BoxGeometry(15,0.5,12), mat(0xa09070));
+  aRoof.position.y = 5.5;
+  asm.add(aRoof);
+  const aDome = new THREE.Mesh(new THREE.SphereGeometry(2.5,8,5,0,Math.PI*2,0,Math.PI/2), mat(C.roofGold));
+  aDome.position.y = 6;
+  asm.add(aDome);
+  asm.position.set(5,1.6,-18);
+  asm.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(asm);
+  addClickable(asm, 'assemblee');
+
+  // === MARCHÉ SANDAGA ===
+  const march = new THREE.Group();
+  const mBase = new THREE.Mesh(new THREE.BoxGeometry(14,3,10), mat(0xd4884a));
+  mBase.position.y = 1.5;
+  march.add(mBase);
+  // Arcade roof
+  const mRoof = new THREE.Mesh(new THREE.BoxGeometry(15,1,11), mat(0xb8700a));
+  mRoof.position.y = 3.5;
+  march.add(mRoof);
+  // Arches
+  for(let i=-2;i<=2;i++) {
+    const arch = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,1,8,1,false,0,Math.PI), mat(0xe8a030));
+    arch.rotation.z = Math.PI/2;
+    arch.position.set(i*3,2.2,5.5);
+    march.add(arch);
+  }
+  // Stalls visible
+  [[0,0],[3,0],[-3,0],[0,3],[-3,3],[3,3]].forEach(([dx,dz]) => {
+    const stall = new THREE.Mesh(new THREE.BoxGeometry(2.5,2,2), mat(0xf0c060+Math.random()*0x101010|0));
+    stall.position.set(dx,1,dz);
+    march.add(stall);
+  });
+  march.position.set(18,1.6,4);
+  march.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(march);
+  addClickable(march, 'marche-sandaga');
+
+  // Generic Plateau buildings (office blocks, colonial houses)
+  const plateauBuildings = [
+    [2,1.6,-8,8,6,6, C.wallCream],
+    [15,1.6,12,7,5,8, C.wallPink],
+    [2,1.6,12,9,4,7, C.wallOrange],
+    [-3,1.6,-10,6,5,5, C.wallCream],
+    [15,1.6,-8,8,7,6, C.concrete],
+    [20,1.6,-14,7,9,8, C.glassDark],
+    [20,1.6,2,6,5,7, C.wallCream],
+    [-12,1.6,12,8,4,6, C.wallPink],
+    [12,1.6,-20,10,6,8, C.wallCream],
+    [-2,1.6,-22,8,5,6, C.wallOrange],
+    [8,1.6,-14,6,4,5, C.wallCream],
+  ];
+  plateauBuildings.forEach(([x,y,z,w,h,d,c]) => {
+    box(w,h,d,c,x,y,z);
+    box(w+0.2,0.5,d+0.2,C.roofOrange,x,y+h,z);
+  });
+}
+
+// ─── PORT DE DAKAR ───────────────────────────────────────────────────────────
+function buildPort() {
+  // Port ground
+  const portGround = new THREE.Mesh(new THREE.BoxGeometry(35,0.3,20), mat(0x707080));
+  portGround.position.set(15,1.5,15);
+  portGround.receiveShadow = true;
+  scene.add(portGround);
+  addClickable(portGround, 'port-dakar');
+
+  // Warehouses
+  [[8,1.8,12],[15,1.8,12],[22,1.8,12],[29,1.8,12]].forEach(([x,y,z]) => {
+    box(5,4,8,0x8a8a90,x,y,z);
+    // Shed roof
+    const roofG = new THREE.Mesh(new THREE.CylinderGeometry(3,3,5.5,3,1,false,-Math.PI/6,Math.PI/3+Math.PI/3), mat(0x607080));
+    roofG.rotation.z = Math.PI/2;
+    roofG.position.set(x,y+4.5,z);
+    scene.add(roofG);
+  });
+
+  // Cranes
+  function crane(x,z) {
+    cylinder(0.3,0.4,12,4,0xcc4422,x,1.8,z);
+    box(10,0.5,0.5,0xcc4422,x+5,13.8,z);
+    box(0.2,10,0.2,0xaaaaaa,x+10,9,z);
+  }
+  crane(8,22); crane(20,22);
+
+  // Ships
+  function ship(x,z,angle=0) {
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(12,2,4), mat(0x334455));
+    hull.position.set(x,0.5,z); hull.rotation.y=angle;
+    hull.castShadow=true; scene.add(hull);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(4,3,3.5), mat(0xddddcc));
+    cabin.position.set(x-3,2.5,z); cabin.rotation.y=angle;
+    cabin.castShadow=true; scene.add(cabin);
+    const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.5,3,6), mat(0x222222));
+    chimney.position.set(x-2,5,z);
+    chimney.castShadow=true; scene.add(chimney);
+  }
+  ship(10,28); ship(24,26,0.1);
+
+  // Dock walls
+  box(35,1.5,1,0x808080,15,1.5,5.5);
+  box(1,1.5,20,0x808080,32.5,1.5,16);
+}
+
+// ─── MÉDINA ───────────────────────────────────────────────────────────────────
+function buildMedina() {
+  // Dense residential blocks
+  const colors = [C.wallOrange, C.wallPink, C.wallCream, 0xd4a870, 0xe8c090, C.wallWhite];
+  for(let gx=0;gx<5;gx++) for(let gz=0;gz<5;gz++) {
+    const x = -35+gx*8;
+    const z = -5+gz*8;
+    const c = colors[Math.floor(Math.random()*colors.length)];
+    const h = 2.5+Math.random()*3;
+    const w = 4+Math.random()*3;
+    const d = 4+Math.random()*3;
+    box(w,h,d,c,x,1.6,z);
+    box(w+0.3,0.4,d+0.3,C.roofOrange,x,1.6+h,z);
+
+    // Small interior courtyard buildings
+    if(Math.random()>0.5) {
+      box(2,h-1,2,colors[Math.floor(Math.random()*colors.length)],x+2,1.6,z+2);
+    }
+  }
+
+  // Mosque Médina
+  const mosque = new THREE.Group();
+  const mBody = new THREE.Mesh(new THREE.BoxGeometry(10,5,10), mat(C.wallWhite));
+  mBody.position.y = 2.5;
+  mosque.add(mBody);
+  // Minaret
+  cylinder(1,1.2,12,8,C.wallWhite,0,0,0);
+  const mDome = new THREE.Mesh(new THREE.SphereGeometry(2,8,6), mat(C.roofGold));
+  mDome.position.y = 5;
+  mosque.add(mDome);
+  const mMinaret = new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.9,14,8), mat(C.wallWhite));
+  mMinaret.position.set(-3.5,7,3.5);
+  mosque.add(mMinaret);
+  const mMDome = new THREE.Mesh(new THREE.SphereGeometry(1,6,5), mat(C.roofGold));
+  mMDome.position.set(-3.5,14.5,3.5);
+  mosque.add(mMDome);
+  const mCrescent = new THREE.Mesh(new THREE.TorusGeometry(0.5,0.1,4,8,Math.PI*1.5), mat(0xffd700));
+  mCrescent.position.set(-3.5,16,3.5);
+  mosque.add(mCrescent);
+  mosque.position.set(-35,1.6,-8);
+  mosque.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(mosque);
+
+  // Market stalls
+  for(let i=0;i<8;i++) {
+    const stall = new THREE.Mesh(new THREE.BoxGeometry(3,2.5,3), mat(0xe0a040));
+    stall.position.set(-45+i*4,2,15);
+    stall.castShadow=true;
+    scene.add(stall);
+    const roof2 = new THREE.Mesh(new THREE.BoxGeometry(3.5,0.2,3.5), mat(0x4488aa));
+    roof2.position.set(-45+i*4,3.6,15);
+    scene.add(roof2);
+  }
+  addClickable(box(1,1,1,0,0,-10,0), 'medina'); // invisible trigger for whole district
+}
+
+// ─── MAMELLES & PHARE ─────────────────────────────────────────────────────────
+function buildMamelles() {
+  // Hill base already in terrain, add rocks
+  box(4,2,4,0x9a8060,-38,12,-18);
+  box(3,1.5,3,0x8a7050,-35,11,-15);
+
+  // Phare des Mamelles
+  const phare = new THREE.Group();
+  const pBase = new THREE.Mesh(new THREE.CylinderGeometry(2.5,3,4,8), mat(C.wallWhite));
+  pBase.position.y = 2;
+  phare.add(pBase);
+  const pTower = new THREE.Mesh(new THREE.CylinderGeometry(1.5,2,10,10), mat(C.wallWhite));
+  pTower.position.y = 9;
+  phare.add(pTower);
+  // Red band
+  const pBand = new THREE.Mesh(new THREE.CylinderGeometry(1.55,1.55,2,10), mat(0xcc2222));
+  pBand.position.y = 8;
+  phare.add(pBand);
+  // Lantern room
+  const pLantern = new THREE.Mesh(new THREE.CylinderGeometry(2,1.8,2,10), mat(C.glass));
+  pLantern.position.y = 15;
+  phare.add(pLantern);
+  const pCap = new THREE.Mesh(new THREE.ConeGeometry(2.2,2,8), mat(0x333333));
+  pCap.position.y = 17;
+  phare.add(pCap);
+  // Light
+  const pLight = new THREE.PointLight(0xffffaa, 2, 60);
+  pLight.position.y = 15.5;
+  phare.add(pLight);
+  phare.position.set(-36,12,-18);
+  phare.traverse(m => { if(m.isMesh) { m.castShadow=true; }});
+  scene.add(phare);
+  addClickable(phare, 'phare-mamelles');
+
+  // Monument de la Renaissance
+  const rena = new THREE.Group();
+  // Pedestal
+  const ped = new THREE.Mesh(new THREE.BoxGeometry(5,4,5), mat(0x8a7050));
+  ped.position.y = 2;
+  rena.add(ped);
+  // Stairs
+  [[0,0.3,0],[0,0.6,0.5],[0,0.9,1]].forEach(([x,y,z],i) => {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(5-i,0.3,1), mat(0x9a8060));
+    s.position.set(x,y,3+z);
+    rena.add(s);
+  });
+  // Figure base (simplified)
+  cylinder(0.8,1,8,6,0x5a4a3a,0,4,0);
+  // Figure torso
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(2.5,4,1.5), mat(0x4a3a2a));
+  torso.position.set(0,10,0);
+  rena.add(torso);
+  // Head
+  sphere(0.8,0x5a4030,0,14.5,0);
+  // Raised arm
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,4,4), mat(0x4a3a2a));
+  arm.position.set(1.5,12,-0.5);
+  arm.rotation.z = -Math.PI/4;
+  rena.add(arm);
+  // Child
+  cylinder(0.5,0.6,3,6,0x4a3a2a,-2,8,0);
+  // Woman
+  cylinder(0.7,0.8,5,6,0x4a3a2a,1.5,7,0);
+  rena.position.set(-32,12,-14);
+  rena.traverse(m => { if(m.isMesh) { m.castShadow=true; }});
+  scene.add(rena);
+  addClickable(rena, 'monument-renaissance');
+}
+
+// ─── MOSQUÉE DE LA DIVINITÉ ──────────────────────────────────────────────────
+function buildMosqueeDivinite() {
+  // Cliff
+  const cliff = new THREE.Mesh(new THREE.BoxGeometry(12,6,8), mat(0x7a6a50));
+  cliff.position.set(-52,4,18);
+  cliff.castShadow=true;
+  scene.add(cliff);
+
+  const mosque = new THREE.Group();
+  // Main building
+  const mq = new THREE.Mesh(new THREE.BoxGeometry(8,5,6), mat(C.wallWhite));
+  mq.position.y = 2.5;
+  mosque.add(mq);
+  // Dome
+  const mqDome = new THREE.Mesh(new THREE.SphereGeometry(3,8,6,0,Math.PI*2,0,Math.PI*0.6), mat(0x2ecc71));
+  mqDome.position.y = 5.5;
+  mosque.add(mqDome);
+  // Minarets
+  [[-3,0,2.5],[3,0,2.5],[-3,0,-2.5],[3,0,-2.5]].forEach(([x,y,z]) => {
+    const mn = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.7,9,8), mat(C.wallWhite));
+    mn.position.set(x,4.5,z);
+    mosque.add(mn);
+    const md = new THREE.Mesh(new THREE.SphereGeometry(0.8,6,5,0,Math.PI*2,0,Math.PI*0.6), mat(0x2ecc71));
+    md.position.set(x,9.5,z);
+    mosque.add(md);
+    // Crescent
+    const mc = new THREE.Mesh(new THREE.TorusGeometry(0.35,0.06,4,6,Math.PI*1.5), mat(0xffd700));
+    mc.position.set(x,10.5,z);
+    mosque.add(mc);
+  });
+  // Arches
+  for(let i=-1;i<=1;i++) {
+    const arc = new THREE.Mesh(new THREE.CylinderGeometry(1,1,0.5,8,1,false,0,Math.PI), mat(C.wallCream));
+    arc.rotation.z = Math.PI/2;
+    arc.position.set(i*2,1.5,3.2);
+    mosque.add(arc);
+  }
+  mosque.position.set(-52,7,18);
+  mosque.traverse(m => { if(m.isMesh) { m.castShadow=true; }});
+  scene.add(mosque);
+  addClickable(mosque, 'mosque-divinite');
+}
+
+// ─── UNIVERSITÉ & FANN ───────────────────────────────────────────────────────
+function buildUniversite() {
+  const univ = new THREE.Group();
+  // Main building
+  const ub = new THREE.Mesh(new THREE.BoxGeometry(15,5,10), mat(C.wallCream));
+  ub.position.y = 2.5;
+  univ.add(ub);
+  // Clock tower
+  const utw = new THREE.Mesh(new THREE.BoxGeometry(3,12,3), mat(C.wallOrange));
+  utw.position.set(0,6,0);
+  univ.add(utw);
+  const ubCap = new THREE.Mesh(new THREE.ConeGeometry(2,3,4), mat(C.roofTeal));
+  ubCap.position.set(0,13,0);
+  univ.add(ubCap);
+  // Wings
+  [-8,8].forEach(x => {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(6,4,8), mat(C.wallCream));
+    wing.position.set(x,2,0);
+    univ.add(wing);
+  });
+  // Campus garden
+  const campus = new THREE.Mesh(new THREE.BoxGeometry(20,0.1,15), mat(C.grass));
+  campus.position.set(0,0,8);
+  univ.add(campus);
+  for(let i=-4;i<=4;i+=2) { palm(i, 10); } // relative palms added to scene
+  univ.position.set(-20,1.6,20);
+  univ.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
+  scene.add(univ);
+  addClickable(univ, 'universite');
+}
+
+// ─── VILLAGE PÊCHEURS ─────────────────────────────────────────────────────────
+function buildVillagePeche() {
+  // Beach
+  const beach = new THREE.Mesh(new THREE.BoxGeometry(20,0.3,8), mat(C.sand));
+  beach.position.set(-44,1.5,8);
+  beach.receiveShadow=true;
+  scene.add(beach);
+  addClickable(beach, 'village-peche');
+
+  // Pirogues (colorful fishing boats)
+  const pirColors = [0xff4444, 0x4444ff, 0x44aa44, 0xff8800, 0xaa44aa, 0x00aaaa];
+  for(let i=0;i<6;i++) {
+    const x = -50+i*2.5;
+    const z = 10+Math.random()*4;
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(5,0.8,1.4), mat(pirColors[i]));
+    hull.position.set(x,1.5,z);
+    hull.rotation.y = Math.random()*0.3-0.15;
+    hull.castShadow=true;
+    scene.add(hull);
+    // Mast
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,4,4), mat(C.palmTrunk));
+    mast.position.set(x,3.3,z);
+    mast.castShadow=true;
+    scene.add(mast);
+    // Net
+    if(i%2===0) {
+      const net = new THREE.Mesh(new THREE.BoxGeometry(3,0.5,1),
+        new THREE.MeshLambertMaterial({color:0x888840,transparent:true,opacity:0.5,wireframe:true}));
+      net.position.set(x+1,1.9,z);
+      scene.add(net);
+    }
+  }
+
+  // Fishermen huts
+  for(let i=0;i<5;i++) {
+    const hut = new THREE.Mesh(new THREE.BoxGeometry(3,2.5,3), mat(0xe8c070));
+    hut.position.set(-48+i*5,2.5,4);
+    hut.castShadow=true;
+    scene.add(hut);
+    const hutRoof = new THREE.Mesh(new THREE.ConeGeometry(2.5,2,4), mat(C.roofOrange));
+    hutRoof.position.set(-48+i*5,4.5,4);
+    hutRoof.rotation.y = Math.PI/4;
+    hutRoof.castShadow=true;
+    scene.add(hutRoof);
+  }
+}
+
+// ─── ALMADIES ─────────────────────────────────────────────────────────────────
+function buildAlmadies() {
+  // Residential villas
+  const villaColors = [C.wallWhite, C.wallCream, C.wallPink, 0xf5f0e0];
+  for(let i=0;i<8;i++) {
+    const x = -50+i%4*6;
+    const z = -28+Math.floor(i/4)*8;
+    const c = villaColors[i%4];
+    box(5,3,5,c,x,1.6,z);
+    box(5.5,0.5,5.5,C.roofTeal,x,4.6+1.5,z);
+    // Pool
+    if(i%3===0) {
+      const pool = new THREE.Mesh(new THREE.BoxGeometry(3,0.2,2), mat(C.ocean));
+      pool.position.set(x+3,1.7,z);
+      scene.add(pool);
+    }
+    // Garden
+    sphere(1.2,C.grass,x+2,2.5,z-3);
+  }
+
+  // Westernmost point marker
+  const capGeo = new THREE.ConeGeometry(1,3,4);
+  const cap = new THREE.Mesh(capGeo, mat(0xff2222));
+  cap.position.set(-55,5,-30);
+  cap.castShadow=true;
+  scene.add(cap);
+  const capPole = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,6,4), mat(0x888888));
+  capPole.position.set(-55,2,-30);
+  scene.add(capPole);
+
+  // Beach resort
+  box(12,3,8,C.wallWhite,-52,-3,44);
+  box(12,0.5,8,C.roofTeal,-52,1.5,44);
+
+  addClickable(box(1,0.1,1,0,-52,2,-30), 'almadies');
+}
+
+// ─── CORNICHE ─────────────────────────────────────────────────────────────────
+function buildCorniche() {
+  // Corniche road along coast
+  const corniPath = [
+    [-28,1.6,22],[-35,1.6,18],[-42,1.6,12],[-48,1.6,5],[-52,1.6,-2],[-54,1.6,-10],[-52,1.6,-18],[-48,1.6,-24]
+  ];
+  for(let i=0;i<corniPath.length-1;i++) {
+    const [x1,y1,z1] = corniPath[i];
+    const [x2,y2,z2] = corniPath[i+1];
+    const mx = (x1+x2)/2, mz = (z1+z2)/2;
+    const dx = x2-x1, dz = z2-z1;
+    const len = Math.sqrt(dx*dx+dz*dz);
+    const angle = Math.atan2(dx,dz);
+    const road = new THREE.Mesh(new THREE.BoxGeometry(2.5,0.1,len), mat(C.road));
+    road.position.set(mx,y1,mz);
+    road.rotation.y = angle;
+    road.receiveShadow=true;
+    scene.add(road);
+  }
+
+  // Corniche railings / benches
+  for(let i=0;i<10;i++) {
+    box(0.2,0.8,2,0x888888,-30-i*2.5,1.7,21-i*0.8);
+    // Bench
+    if(i%3===0) {
+      box(1.5,0.4,0.5,0x8b6a3d,-29-i*2.5,2,20-i*0.8);
+    }
+  }
+
+  const cornRoad = new THREE.Mesh(new THREE.BoxGeometry(1,0.1,1), mat(0));
+  cornRoad.position.set(-40,1.6,10);
+  scene.add(cornRoad);
+  addClickable(cornRoad, 'corniche');
+}
+
+// ─── EXTRA CITY BUILDINGS ─────────────────────────────────────────────────────
+function buildCityFill() {
+  // Fann residential
+  const fannColors = [C.wallCream, C.wallPink, C.wallOrange, C.wallWhite];
+  for(let i=0;i<20;i++) {
+    const x = -8+Math.random()*20-20;
+    const z = 15+Math.random()*18;
+    const h = 2+Math.random()*5;
+    const c = fannColors[Math.floor(Math.random()*4)];
+    box(4+Math.random()*3, h, 4+Math.random()*3, c, x, 1.6, z);
+  }
+
+  // Point E / Les Almadies residential
+  for(let i=0;i<12;i++) {
+    const x = -20+Math.random()*15;
+    const z = -30+Math.random()*10;
+    box(5+Math.random()*3, 2+Math.random()*4, 5+Math.random()*3, C.wallCream, x, 1.6, z);
+  }
+
+  // Yoff / HLM area (northeast)
+  for(let r=0;r<4;r++) for(let c2=0;c2<4;c2++) {
+    const x = 25+c2*8;
+    const z = -10+r*8;
+    const h = 4+Math.random()*8;
+    const colr = Math.random()>0.5 ? C.concrete : C.wallCream;
+    box(6,h,6,colr,x,1.6,z);
+    for(let fl=0;fl<Math.floor(h/2);fl++) {
+      box(6.1,0.3,6.1,C.roofGrey,x,1.6+fl*2+1.8,z);
+    }
+  }
+
+  // Grand Yoff / Parcelles
+  for(let i=0;i<15;i++) {
+    const x = 30+Math.random()*20;
+    const z = 10+Math.random()*20;
+    box(5+Math.random()*3,3+Math.random()*4,5+Math.random()*3,
+      [C.wallOrange,C.wallPink,C.wallCream][Math.floor(Math.random()*3)],x,1.6,z);
+  }
+
+  // Embassies row (Almadies)
+  for(let i=0;i<4;i++) {
+    box(6,4,6,C.wallWhite,-40+i*7,1.6,-28);
+    box(6.5,0.5,6.5,0x4488aa,-40+i*7,5.6,-28);
+    // Flag
+    cylinder(0.1,0.1,4,4,0xaaaaaa,-40+i*7+2,1.7,-25.5);
+  }
+}
+
+// ─── PALM TREES (standalone) ──────────────────────────────────────────────────
+function addPalmTrees() {
+  const positions = [
+    [5,-8],[10,-8],[-5,-8],[5,-16],[10,-16],
+    [-15,-25],[-20,-25],[-25,-25],
+    [0,25],[5,28],[-5,28],
+    [-35,25],[-40,28],[-45,22],
+    [15,20],[18,22],[20,18],
+    [-10,-5],[-8,-8],[-12,-10],
+  ];
+  positions.forEach(([x,z]) => {
+    const trunkH = 3+Math.random()*2;
+    cylinder(0.2,0.3,trunkH,5,C.palmTrunk,x,1.6,z);
+    sphere(1.5+Math.random(),C.palm,x,1.6+trunkH,z);
+    sphere(0.8,C.palm,x+1,1.6+trunkH-0.5,z);
+    sphere(0.8,C.palm,x-1,1.6+trunkH-0.5,z);
+    sphere(0.8,C.palm,x,1.6+trunkH-0.5,z+1);
+    sphere(0.8,C.palm,x,1.6+trunkH-0.5,z-1);
+  });
+}
+
+// ─── WATER ANIMATION ─────────────────────────────────────────────────────────
+const oceanMeshes = [];
+scene.traverse(obj => { if(obj.userData && obj.userData.isOcean) oceanMeshes.push(obj); });
+
+// ─── BUILD EVERYTHING ─────────────────────────────────────────────────────────
+function buildCity() {
+  buildTerrain();
+  buildPlateau();
+  buildPort();
+  buildMedina();
+  buildMamelles();
+  buildMosqueeDivinite();
+  buildUniversite();
+  buildVillagePeche();
+  buildAlmadies();
+  buildCorniche();
+  buildCityFill();
+  addPalmTrees();
+}
+
+buildCity();
+
+// ─── MINIMAP ──────────────────────────────────────────────────────────────────
+const mmCanvas = document.getElementById('mm-canvas');
+const mmCtx = mmCanvas.getContext('2d');
+
+function drawMinimap(camX, camZ) {
+  const W2=140, H2=110;
+  mmCtx.fillStyle='#0d3d52';
+  mmCtx.fillRect(0,0,W2,H2);
+
+  const scale=1.1, ox=W2/2, oy=H2/2;
+  const toMM=(x,z) => [ox+x*scale, oy+z*scale];
+
+  // Land
+  mmCtx.fillStyle='#c4956a';
+  mmCtx.beginPath();
+  const pts=[[-55,-50],[-50,-45],[-55,-30],[-60,-10],[-58,10],[-50,25],[-35,35],[-15,40],[5,38],[20,30],[25,15],[22,0],[15,-10],[10,-25],[5,-45],[-10,-55],[-30,-58],[-45,-55]];
+  pts.forEach(([x,z],i) => {
+    const [mx,mz]=toMM(x,z);
+    i===0?mmCtx.moveTo(mx,mz):mmCtx.lineTo(mx,mz);
+  });
+  mmCtx.closePath();
+  mmCtx.fill();
+
+  // Districts
+  const districts=[
+    {x:5,z:-5,r:8,c:'rgba(245,166,35,0.3)',n:'Plateau'},
+    {x:-30,z:0,r:10,c:'rgba(200,100,50,0.3)',n:'Médina'},
+    {x:-38,z:-16,r:7,c:'rgba(100,150,100,0.3)',n:'Mamelles'},
+    {x:20,z:10,r:8,c:'rgba(100,120,180,0.3)',n:'Yoff'},
+    {x:-15,z:20,r:8,c:'rgba(100,180,150,0.3)',n:'Fann'},
+  ];
+  districts.forEach(d => {
+    const [mx,mz]=toMM(d.x,d.z);
+    mmCtx.fillStyle=d.c;
+    mmCtx.beginPath();
+    mmCtx.arc(mx,mz,d.r,0,Math.PI*2);
+    mmCtx.fill();
+  });
+
+  // Landmarks dots
+  const lmarks=[{x:8,z:-8,c:'#f5a623'},{x:-18,z:4,c:'#ff6644'},{x:-36,z:-18,c:'#ffffff'},{x:-32,z:-14,c:'#aaaaff'}];
+  lmarks.forEach(({x,z,c}) => {
+    const [mx,mz]=toMM(x,z);
+    mmCtx.fillStyle=c;
+    mmCtx.beginPath();
+    mmCtx.arc(mx,mz,2,0,Math.PI*2);
+    mmCtx.fill();
+  });
+
+  // Camera position
+  const [cx,cz] = toMM(camX, camZ);
+  mmCtx.strokeStyle='#f5a623';
+  mmCtx.lineWidth=1.5;
+  mmCtx.strokeRect(cx-6,cz-5,12,10);
+}
+drawMinimap(0, 0);
+
+// ─── CAMERA CONTROLS ─────────────────────────────────────────────────────────
+let camTarget = new THREE.Vector3(0, 0, 0);
+let camZoom = 35;
+let isDragging = false;
+let lastMouse = {x:0, y:0};
+const keys = {};
+
+function updateCamera() {
+  camera.left   = -camZoom * aspect;
+  camera.right  =  camZoom * aspect;
+  camera.top    =  camZoom;
+  camera.bottom = -camZoom;
+  camera.updateProjectionMatrix();
+  camera.position.set(camTarget.x+80, camTarget.y+80, camTarget.z+80);
+  camera.lookAt(camTarget);
+}
+updateCamera();
+
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()]=true);
+window.addEventListener('keyup',   e => keys[e.key.toLowerCase()]=false);
+
+renderer.domElement.addEventListener('mousedown', e => {
+  if(e.button===2 || e.button===1) { isDragging=true; lastMouse={x:e.clientX,y:e.clientY}; }
+});
+window.addEventListener('mouseup', () => isDragging=false);
+window.addEventListener('mousemove', e => {
+  if(isDragging) {
+    const dx = e.clientX - lastMouse.x;
+    const dy = e.clientY - lastMouse.y;
+    camTarget.x -= dx * 0.15 * (camZoom/35);
+    camTarget.z -= dy * 0.15 * (camZoom/35);
+    lastMouse = {x:e.clientX, y:e.clientY};
+  }
+  // Move tooltip
+  tooltip.style.left = e.clientX+'px';
+  tooltip.style.top  = e.clientY+'px';
+});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+renderer.domElement.addEventListener('wheel', e => {
+  camZoom = Math.max(10, Math.min(80, camZoom + e.deltaY * 0.05));
+});
+
+// Touch support
+let lastTouch = null;
+renderer.domElement.addEventListener('touchstart', e => {
+  if(e.touches.length===1) lastTouch = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+});
+renderer.domElement.addEventListener('touchmove', e => {
+  if(e.touches.length===1 && lastTouch) {
+    const dx = e.touches[0].clientX - lastTouch.x;
+    const dy = e.touches[0].clientY - lastTouch.y;
+    camTarget.x -= dx*0.2*(camZoom/35);
+    camTarget.z -= dy*0.2*(camZoom/35);
+    lastTouch = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+  } else if(e.touches.length===2) {
+    const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(lastTouch && lastTouch.pinchDist) camZoom = Math.max(10,Math.min(80,camZoom-(d-lastTouch.pinchDist)*0.1));
+    lastTouch = {pinchDist:d};
+  }
+});
+
+// Compass / R key reset
+document.getElementById('compass').addEventListener('click', () => {
+  camTarget.set(0,0,0); camZoom=35;
+});
+window.addEventListener('keydown', e => {
+  if(e.key.toLowerCase()==='r') { camTarget.set(0,0,0); camZoom=35; }
+});
+
+// ─── RAYCASTING / CLICK ──────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const tooltip = document.getElementById('tooltip');
+
+renderer.domElement.addEventListener('mousemove', e => {
+  mouse.x = (e.clientX/W)*2-1;
+  mouse.y = -(e.clientY/H)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(clickableObjects, false);
+  if(hits.length>0) {
+    const id = hits[0].object.userData.landmarkId;
+    const d = landmarkData[id];
+    if(d) {
+      tooltip.textContent = d.icon+' '+d.name;
+      tooltip.classList.add('visible');
+      renderer.domElement.style.cursor='pointer';
+    }
+  } else {
+    tooltip.classList.remove('visible');
+    renderer.domElement.style.cursor='default';
+  }
+});
+
+renderer.domElement.addEventListener('click', e => {
+  if(isDragging) return;
+  mouse.x = (e.clientX/W)*2-1;
+  mouse.y = -(e.clientY/H)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(clickableObjects, false);
+  if(hits.length>0) {
+    const id = hits[0].object.userData.landmarkId;
+    showInfo(id);
+  }
+});
+
+// ─── INFO PANEL ───────────────────────────────────────────────────────────────
+const infoPanel = document.getElementById('info-panel');
+function showInfo(id) {
+  const d = landmarkData[id];
+  if(!d) return;
+  document.getElementById('info-icon').textContent = d.icon;
+  document.getElementById('info-name').textContent = d.name;
+  document.getElementById('info-type').textContent = d.type;
+  document.getElementById('info-desc').textContent = d.desc;
+  document.getElementById('info-tag').textContent = d.tag;
+  const statsEl = document.getElementById('info-stats');
+  statsEl.innerHTML = (d.stats||[]).map(s =>
+    `<div class="info-stat"><span class="stat-key">${s.k}</span><span class="stat-val">${s.v}</span></div>`
+  ).join('');
+  infoPanel.classList.add('visible');
+}
+document.getElementById('info-close').addEventListener('click', () => infoPanel.classList.remove('visible'));
+
+// ─── MODE BUTTONS ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const mode = btn.dataset.mode;
+    if(mode==='landmarks') {
+      // Fly to landmark overview
+      camTarget.set(-5,0,-5); camZoom=50;
+    } else if(mode==='districts') {
+      camTarget.set(-15,0,5); camZoom=55;
+    } else {
+      camTarget.set(0,0,0); camZoom=35;
+    }
+  });
+});
+
+// ─── DAY/NIGHT TOGGLE ─────────────────────────────────────────────────────────
+document.getElementById('btn-day').addEventListener('click', () => {
+  setupLighting('day');
+  document.querySelectorAll('.dn-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-day').classList.add('active');
+});
+document.getElementById('btn-sunset').addEventListener('click', () => {
+  setupLighting('sunset');
+  document.querySelectorAll('.dn-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-sunset').classList.add('active');
+});
+document.getElementById('btn-night').addEventListener('click', () => {
+  setupLighting('night');
+  document.querySelectorAll('.dn-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-night').classList.add('active');
+});
+
+// ─── GUIDED TOUR ─────────────────────────────────────────────────────────────
+const tourStops = [
+  {x:5,  z:-8,  zoom:20, id:'tour-bceao',          delay:4000},
+  {x:-2, z:-2,  zoom:18, id:'place-independance',   delay:4000},
+  {x:-18,z:4,   zoom:22, id:'cathedrale',           delay:4000},
+  {x:-18,z:-18, zoom:22, id:'palais-president',     delay:4000},
+  {x:18, z:4,   zoom:20, id:'marche-sandaga',       delay:4000},
+  {x:-36,z:-18, zoom:22, id:'phare-mamelles',       delay:4000},
+  {x:-32,z:-14, zoom:20, id:'monument-renaissance', delay:4000},
+  {x:-52,z:18,  zoom:20, id:'mosque-divinite',      delay:4000},
+  {x:15, z:15,  zoom:22, id:'port-dakar',           delay:4000},
+  {x:-20,z:20,  zoom:22, id:'universite',           delay:3000},
+];
+let tourIdx = -1;
+let tourTimer = null;
+let isTouring = false;
+
+function nextTourStop() {
+  tourIdx = (tourIdx+1)%tourStops.length;
+  const stop = tourStops[tourIdx];
+  // Smooth camera move
+  const targetX = stop.x, targetZ = stop.z, targetZoom = stop.zoom;
+  const startX = camTarget.x, startZ = camTarget.z, startZoom = camZoom;
+  let t = 0;
+  const dur = 1500;
+  const start = Date.now();
+  function animStep() {
+    t = Math.min(1,(Date.now()-start)/dur);
+    const ease = t<0.5 ? 2*t*t : -1+(4-2*t)*t;
+    camTarget.x = startX+(targetX-startX)*ease;
+    camTarget.z = startZ+(targetZ-startZ)*ease;
+    camZoom = startZoom+(targetZoom-startZoom)*ease;
+    if(t<1) requestAnimationFrame(animStep);
+    else { showInfo(stop.id); }
+  }
+  animStep();
+  if(tourTimer) clearTimeout(tourTimer);
+  tourTimer = setTimeout(nextTourStop, stop.delay);
+}
+
+document.getElementById('tour-btn').addEventListener('click', () => {
+  if(isTouring) {
+    isTouring=false;
+    if(tourTimer) clearTimeout(tourTimer);
+    document.getElementById('tour-btn').textContent='▶ Visite Guidée';
+    infoPanel.classList.remove('visible');
+  } else {
+    isTouring=true;
+    document.getElementById('tour-btn').textContent='⏹ Arrêter la visite';
+    tourIdx=-1;
+    nextTourStop();
+  }
+});
+
+// ─── DISTRICT LABELS ─────────────────────────────────────────────────────────
+const districtDefs = [
+  {name:'LE PLATEAU', wx:5, wz:-10},
+  {name:'MÉDINA', wx:-32, wz:0},
+  {name:'FANN', wx:-15, wz:20},
+  {name:'LES ALMADIES', wx:-45, wz:-28},
+  {name:'MAMELLES', wx:-36, wz:-16},
+  {name:'PORT', wx:18, wz:20},
+  {name:'YOFF', wx:28, wz:5},
+  {name:'OUAKAM', wx:-45, wz:10},
+];
+
+function updateDistrictLabels() {
+  const labelsContainer = document.getElementById('labels');
+  labelsContainer.innerHTML='';
+  districtDefs.forEach(d => {
+    const v = new THREE.Vector3(d.wx,1.6,d.wz);
+    v.project(camera);
+    const sx = (v.x*0.5+0.5)*W;
+    const sy = (-v.y*0.5+0.5)*H;
+    if(v.z<1) {
+      const el = document.createElement('div');
+      el.className='district-label';
+      el.textContent=d.name;
+      el.style.left=sx+'px';
+      el.style.top=sy+'px';
+      labelsContainer.appendChild(el);
+    }
+  });
+}
+
+// ─── LOADING ──────────────────────────────────────────────────────────────────
+const loadingFill = document.getElementById('loading-fill');
+let loadPct = 0;
+const loadInterval = setInterval(() => {
+  loadPct += 10;
+  loadingFill.style.width = loadPct+'%';
+  if(loadPct>=100) {
+    clearInterval(loadInterval);
+    setTimeout(() => {
+      document.getElementById('loading').style.opacity='0';
+      document.getElementById('loading').style.transition='opacity 0.5s';
+      setTimeout(() => document.getElementById('loading').style.display='none', 500);
+    }, 200);
+  }
+}, 80);
+
+// ─── ANIMATION LOOP ───────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let frame = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  frame++;
+
+  // WASD camera movement
+  const speed = 0.2 * (camZoom/35);
+  if(keys['z']||keys['arrowup'])    { camTarget.x -= speed; camTarget.z -= speed; }
+  if(keys['s']||keys['arrowdown'])  { camTarget.x += speed; camTarget.z += speed; }
+  if(keys['q']||keys['arrowleft'])  { camTarget.x -= speed; camTarget.z += speed; }
+  if(keys['d']||keys['arrowright']) { camTarget.x += speed; camTarget.z -= speed; }
+  if(keys['e']) camZoom = Math.max(10, camZoom-0.5);
+  if(keys['a']) camZoom = Math.min(80, camZoom+0.5);
+
+  updateCamera();
+
+  // Ocean wave animation
+  scene.traverse(obj => {
+    if(obj.userData && obj.userData.isOcean) {
+      const pos = obj.geometry.attributes.position;
+      for(let i=0;i<pos.count;i++) {
+        const x=pos.getX(i), z=pos.getZ(i);
+        pos.setY(i, Math.sin(x*0.3+t)*0.15+Math.sin(z*0.4+t*1.3)*0.1);
+      }
+      pos.needsUpdate=true;
+    }
+  });
+
+  // Update minimap
+  if(frame%3===0) drawMinimap(camTarget.x, camTarget.z);
+
+  // Update district labels
+  if(frame%2===0) updateDistrictLabels();
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ─── RESIZE ───────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const nW=window.innerWidth, nH=window.innerHeight;
+  renderer.setSize(nW,nH);
+  const nAspect=nW/nH;
+  camera.left=-camZoom*nAspect; camera.right=camZoom*nAspect;
+  camera.top=camZoom; camera.bottom=-camZoom;
+  camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>
