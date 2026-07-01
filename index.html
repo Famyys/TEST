@@ -252,9 +252,6 @@
 
 <script src="three.min.js"></script>
 <script>
-window.onerror = function(msg, src, line, col, err) {
-  document.getElementById('loading').innerHTML = '<div style="color:#f55;font-size:14px;padding:20px;text-align:center;max-width:600px"><b>Erreur JS:</b><br>' + msg + '<br><small>' + src + ':' + line + '</small></div>';
-};
 // ─── SCENE SETUP ────────────────────────────────────────────────────────────
 const container = document.getElementById('canvas-container');
 const W = window.innerWidth, H = window.innerHeight;
@@ -1218,7 +1215,14 @@ function buildUniversite() {
   const campus = new THREE.Mesh(new THREE.BoxGeometry(20,0.1,15), mat(C.grass));
   campus.position.set(0,0,8);
   univ.add(campus);
-  for(let i=-4;i<=4;i+=2) { palm(i, 10); } // relative palms added to scene
+  for(let i=-4;i<=4;i+=2) {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.3,3,5), mat(C.palmTrunk));
+    trunk.position.set(i,1.5,10);
+    scene.add(trunk);
+    const top = new THREE.Mesh(new THREE.SphereGeometry(1.5,5,4), mat(C.palm));
+    top.position.set(i,3.2,10);
+    scene.add(top);
+  }
   univ.position.set(-20,1.6,20);
   univ.traverse(m => { if(m.isMesh) { m.castShadow=true; m.receiveShadow=true; }});
   scene.add(univ);
